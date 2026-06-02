@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>雷電 - Raiden: Neon Void</title>
+    <script>
+        // Global error logging overlay for debugging runtime crashes
+        window.onerror = function(message, source, lineno, colno, error) {
+            const msg = message + "\nLine: " + lineno + ", Col: " + colno + "\nSource: " + source;
+            const stack = error ? error.stack : 'No stack trace available';
+            console.error("Caught error:", msg, stack);
+            
+            const showOverlay = () => {
+                const overlay = document.getElementById('error-overlay');
+                if (overlay) {
+                    overlay.style.display = 'block';
+                    const file = source ? source.split('/').pop() : 'unknown';
+                    document.getElementById('error-msg').textContent = message + " (" + file + ":" + lineno + ":" + colno + ")";
+                    document.getElementById('error-stack').textContent = stack;
+                }
+            };
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', showOverlay);
+            } else {
+                showOverlay();
+            }
+            return false;
+        };
+        window.addEventListener('unhandledrejection', function(event) {
+            const reason = event.reason;
+            const msg = "Unhandled Promise Rejection: " + (reason ? reason.message || reason : 'Unknown');
+            const stack = reason && reason.stack ? reason.stack : 'No stack trace available';
+            console.error(msg, stack);
+            
+            const showOverlay = () => {
+                const overlay = document.getElementById('error-overlay');
+                if (overlay) {
+                    overlay.style.display = 'block';
+                    document.getElementById('error-msg').textContent = msg;
+                    document.getElementById('error-stack').textContent = stack;
+                }
+            };
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', showOverlay);
+            } else {
+                showOverlay();
+            }
+        });
+
+        // Override console.error to capture Phaser's internal scene updates errors (important for file:// protocols)
+        const originalConsoleError = console.error;
+        console.error = function() {
+            originalConsoleError.apply(console, arguments);
+            const msg = Array.from(arguments).map(arg => {
+                if (arg instanceof Error) return arg.message + "\n" + arg.stack;
+                if (typeof arg === 'object') {
+                    try { return JSON.stringify(arg); } catch(e) { return String(arg); }
+                }
+                return String(arg);
+            }).join(' ');
+
+            const showOverlay = () => {
+                const overlay = document.getElementById('error-overlay');
+                if (overlay) {
+                    overlay.style.display = 'block';
+                    document.getElementById('error-msg').textContent = "偵測到核心錯誤 (Core Error Caught)";
+                    document.getElementById('error-stack').textContent = msg;
+                }
+            };
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', showOverlay);
+            } else {
+                showOverlay();
+            }
+        };
+    </script>
+    <!-- Google Fonts: Orbitron for Sci-Fi vibe and Share Tech Mono for terminal readouts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Floating Debug Console for User Error Reporting -->
+    <div id="error-overlay" style="display:none; position:fixed; top:10px; left:10px; right:10px; background:rgba(30,5,5,0.95); border:2px solid #ff0055; border-radius:8px; padding:15px; z-index:99999; font-family:monospace; font-size:12px; color:#ffdddd; overflow-y:auto; max-height:80vh; box-shadow:0 0 20px rgba(255,0,85,0.5); text-align:left;">
+        <h3 style="color:#ff0055; margin-bottom:10px; font-size:14px; text-shadow:0 0 5px #ff0055; font-family:sans-serif;">⚠️ 偵測到執行期錯誤 (Runtime Error)</h3>
+        <p id="error-msg" style="margin-bottom:8px; font-weight:bold;"></p>
+        <pre id="error-stack" style="background:#110000; padding:10px; border-radius:4px; border:1px solid rgba(255,0,85,0.25); white-space:pre-wrap; word-break:break-all; font-family:monospace;"></pre>
+        <button onclick="document.getElementById('error-overlay').style.display='none'" style="background:#ff0055; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-weight:bold; margin-top:8px;">關閉 (Close)</button>
+    </div>
+    <div id="game-container">
+        <!-- The HTML5 Game Canvas -->
+        <canvas id="game-canvas"></canvas>
+
+        <!-- Start Menu Screen Overlay -->
+        <div id="start-menu" class="overlay active">
+            <div class="menu-box glass">
+                <h1 class="glow-text neon-magenta">RAIDEN</h1>
+                <p class="subtitle neon-cyan">NEON VOID</p>
+                
+                <div class="menu-buttons">
+                    <button id="btn-start" class="btn btn-primary glow-btn">進入戰場</button>
+                    <button id="btn-hangar" class="btn btn-secondary">整備機庫 (Hangar)</button>
+                </div>
+                
+                <div class="keyboard-controls">
+                    <h3>操作說明 (Keyboard Controls)</h3>
+                    <ul>
+                        <li><span class="key">W</span> <span class="key">A</span> <span class="key">S</span> <span class="key">D</span> / <span class="key">↑</span> <span class="key">←</span> <span class="key">↓</span> <span class="key">→</span> : 移動飛船 (Move Ship)</li>
+                        <li><span class="key">Space</span> (空白鍵) : 發射雷射 (Shoot Laser)</li>
+                        <li><span class="key">B</span> : 量子炸彈 (Quantum Bomb)</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hangar / Upgrade Shop Screen Overlay -->
+        <div id="hangar-menu" class="overlay">
+            <div class="menu-box glass upgrade-box">
+                <h2 class="glow-text neon-cyan">整備機庫 (Hangar & Upgrades)</h2>
+                
+                <div class="currency-display">
+                    <span>可用星塵晶體:</span>
+                    <span id="hangar-crystals" class="crystal-count neon-gold">0</span> <span class="crystal-icon">💎</span>
+                </div>
+
+                <div class="upgrade-list">
+                    <!-- Max Armor Upgrade -->
+                    <div class="upgrade-item">
+                        <div class="upgrade-info">
+                            <h3>強化裝甲 (Max Armor)</h3>
+                            <p>提高飛船承受撞擊與子彈傷害的上限。</p>
+                        </div>
+                        <div class="upgrade-action">
+                            <span id="level-armor" class="stat-level">Lv 1</span>
+                            <button id="btn-upgrade-armor" class="btn-buy glow-btn">升級 <span class="cost">10</span> 💎</button>
+                        </div>
+                    </div>
+
+                    <!-- Max Shield Upgrade -->
+                    <div class="upgrade-item">
+                        <div class="upgrade-info">
+                            <h3>能量護盾 (Max Shield)</h3>
+                            <p>提升自動充能護盾的最大容量與恢復速度。</p>
+                        </div>
+                        <div class="upgrade-action">
+                            <span id="level-shield" class="stat-level">Lv 1</span>
+                            <button id="btn-upgrade-shield" class="btn-buy glow-btn">升級 <span class="cost">12</span> 💎</button>
+                        </div>
+                    </div>
+
+                    <!-- Weapon Upgrade Power -->
+                    <div class="upgrade-item">
+                        <div class="upgrade-info">
+                            <h3>主砲出力 (Weapon System)</h3>
+                            <p>升級初始武器威力和射速，並使解鎖更高等級的彈幕更容易。</p>
+                        </div>
+                        <div class="upgrade-action">
+                            <span id="level-weapon" class="stat-level">Lv 1</span>
+                            <button id="btn-upgrade-weapon" class="btn-buy glow-btn">升級 <span class="cost">15</span> 💎</button>
+                        </div>
+                    </div>
+
+                    <!-- Magnet Range Upgrade -->
+                    <div class="upgrade-item">
+                        <div class="upgrade-info">
+                            <h3>磁力牽引 (Magnet Range)</h3>
+                            <p>擴大吸引星塵晶體與道具的範圍。</p>
+                        </div>
+                        <div class="upgrade-action">
+                            <span id="level-magnet" class="stat-level">Lv 1</span>
+                            <button id="btn-upgrade-magnet" class="btn-buy glow-btn">升級 <span class="cost">8</span> 💎</button>
+                        </div>
+                    </div>
+
+                    <!-- Starting Bombs Upgrade -->
+                    <div class="upgrade-item">
+                        <div class="upgrade-info">
+                            <h3>炸彈艙量 (Starting Bombs)</h3>
+                            <p>增加每局遊戲開始時配備的量子炸彈數量上限。</p>
+                        </div>
+                        <div class="upgrade-action">
+                            <span id="level-bombs" class="stat-level">Lv 1</span>
+                            <button id="btn-upgrade-bombs" class="btn-buy glow-btn">升級 <span class="cost">20</span> 💎</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="menu-buttons">
+                    <button id="btn-hangar-back" class="btn btn-secondary">返回主選單</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- In-game Heads Up Display (HUD) Overlay -->
+        <div id="hud" class="hud-overlay">
+            <!-- Top bar -->
+            <div class="hud-top">
+                <div class="hud-left">
+                    <div class="hud-stat">
+                        <span class="label">SCORE:</span>
+                        <span id="hud-score" class="value neon-cyan">000000</span>
+                    </div>
+                    <div class="hud-stat">
+                        <span class="label">STAGE:</span>
+                        <span id="hud-stage" class="value neon-magenta">1</span>
+                    </div>
+                </div>
+                <div class="hud-right">
+                    <div class="hud-stat">
+                        <span id="hud-crystals" class="value neon-gold">0</span>
+                        <span class="crystal-icon">💎</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom UI: Bars and weapons status -->
+            <div class="hud-bottom">
+                <div class="hud-bars">
+                    <!-- Shield Bar -->
+                    <div class="bar-container">
+                        <div class="bar-label">SHIELD</div>
+                        <div class="bar-outer">
+                            <div id="bar-shield" class="bar-inner shield-bg" style="width: 100%;"></div>
+                        </div>
+                    </div>
+                    <!-- Armor (Health) Bar -->
+                    <div class="bar-container">
+                        <div class="bar-label">ARMOR</div>
+                        <div class="bar-outer">
+                            <div id="bar-armor" class="bar-inner armor-bg" style="width: 100%;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="hud-weapons">
+                    <!-- Bomb count indicators -->
+                    <div class="bomb-slots">
+                        <span class="label">BOMBS:</span>
+                        <div id="bomb-indicators" class="bomb-icons-container">
+                            <!-- Dynamically generated icons representing bombs -->
+                            <div class="bomb-icon active"></div>
+                            <div class="bomb-icon active"></div>
+                            <div class="bomb-icon active"></div>
+                        </div>
+                    </div>
+                    <div class="weapon-info">
+                        <span class="label">WEAPON:</span>
+                        <span id="hud-weapon-level" class="value neon-cyan">Lv 1</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Warning/Alert Overlay (e.g. BOSS ALERT) -->
+            <div id="boss-warning" class="boss-warning-overlay">
+                <div class="warning-content">
+                    <h1 class="warning-title neon-red blink">! WARNING !</h1>
+                    <p class="warning-text">HIGH-THREAT CAPITAL VESSEL INBOUND</p>
+                    <p class="boss-name" id="warning-boss-name">VOID WEAVER</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pause Overlay -->
+        <div id="pause-menu" class="overlay">
+            <div class="menu-box glass">
+                <h2 class="glow-text neon-cyan">已暫停</h2>
+                <div class="menu-buttons">
+                    <button id="btn-resume" class="btn btn-primary">繼續遊戲</button>
+                    <button id="btn-pause-restart" class="btn btn-secondary">重新開始</button>
+                    <button id="btn-pause-quit" class="btn btn-secondary">放棄並返回主選單</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Over Screen Overlay -->
+        <div id="game-over-screen" class="overlay">
+            <div class="menu-box glass">
+                <h1 class="glow-text neon-red blink">戰機擊毀</h1>
+                <p class="subtitle neon-magenta">MISSION FAILED</p>
+                
+                <div class="game-results">
+                    <div class="result-row">
+                        <span>最終得分:</span>
+                        <span id="final-score" class="neon-cyan">0</span>
+                    </div>
+                    <div class="result-row">
+                        <span>收集星塵晶體:</span>
+                        <span id="collected-crystals" class="neon-gold">0</span>
+                    </div>
+                </div>
+
+                <div class="menu-buttons">
+                    <button id="btn-retry" class="btn btn-primary glow-btn">再戰一局</button>
+                    <button id="btn-over-hangar" class="btn btn-secondary">返回機庫升級</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Victory Screen Overlay -->
+        <div id="victory-screen" class="overlay">
+            <div class="menu-box glass">
+                <h1 class="glow-text neon-green blink">首領殲滅</h1>
+                <p class="subtitle neon-cyan">VICTORY OVER THE VOID</p>
+                
+                <div class="game-results">
+                    <div class="result-row">
+                        <span>最終得分:</span>
+                        <span id="victory-score" class="neon-cyan">0</span>
+                    </div>
+                    <div class="result-row">
+                        <span>收集星塵晶體:</span>
+                        <span id="victory-crystals" class="neon-gold">0</span>
+                    </div>
+                </div>
+
+                <div class="menu-buttons">
+                    <button id="btn-victory-continue" class="btn btn-primary glow-btn">進入機庫</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Game JS -->
+    <script src="game.js"></script>
+</body>
+</html>
